@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, TouchableWithoutFeedback } from 'react-native';
+import { Animated, Easing, GestureResponderEvent, TouchableWithoutFeedback } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 interface Props {
@@ -11,14 +11,16 @@ interface Props {
   tintColor: string;
   spinClockwise: boolean;
   sourceIndex: number;
+  animateSpawn?:   boolean;
+  animateDestroy?: boolean;
   onExit: (id: string) => void;
-  onDestroy: (id: string) => void;
+  onDestroy: (id: string, tapX: number, tapY: number, reactionMs: number) => void;
 }
 
 function PlanetSVG({ id, size: s, tintColor }: { id: string; size: number; tintColor: string }) {
   const cx  = s / 2;
   const cy  = s / 2;
-  const r  = s * 0.38;
+  const r   = s * 0.38;
   const gId = `g${id}`;
 
   return (
@@ -30,48 +32,63 @@ function PlanetSVG({ id, size: s, tintColor }: { id: string; size: number; tintC
           <Stop offset="100%" stopColor={tintColor} stopOpacity="1" />
         </RadialGradient>
       </Defs>
-
       <Circle cx={cx} cy={cy} r={r} fill={`url(#${gId})`} />
     </Svg>
   );
 }
 
 export default function PlanetObject({
-  id, x, y, size, lifespan, tintColor, spinClockwise, onExit, onDestroy,
+  id, x, y, size, lifespan, tintColor, spinClockwise,
+  animateSpawn = true, animateDestroy = true,
+  onExit, onDestroy,
 }: Props) {
-  const spawnScale   = useRef(new Animated.Value(0.1)).current;
-  const spawnOpacity = useRef(new Animated.Value(0)).current;
+  const spawnScale   = useRef(new Animated.Value(animateSpawn ? 0.1 : 1)).current;
+  const spawnOpacity = useRef(new Animated.Value(animateSpawn ? 0   : 1)).current;
   const destroyScale = useRef(new Animated.Value(1)).current;
   const bob          = useRef(new Animated.Value(0)).current;
   const spin         = useRef(new Animated.Value(0)).current;
   const destroyed    = useRef(false);
+
+  // RT clock starts when planet is fully visible. When animation disabled, that's mount time.
+  const readyTs = useRef(Date.now());
 
   const spinRotate = spin.interpolate({
     inputRange:  [0, 1],
     outputRange: spinClockwise ? ['0deg', '360deg'] : ['360deg', '0deg'],
   });
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(spawnScale, { toValue: 1, friction: 4, tension: 90, useNativeDriver: true }),
-      Animated.timing(spawnOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(bob, { toValue: -12, duration: 1600, useNativeDriver: true }),
-          Animated.timing(bob, { toValue:  12, duration: 1600, useNativeDriver: true }),
-        ]),
-      ).start();
+  const startIdleAnimations = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: -12, duration: 1600, useNativeDriver: true }),
+        Animated.timing(bob, { toValue:  12, duration: 1600, useNativeDriver: true }),
+      ]),
+    ).start();
 
-      Animated.loop(
-        Animated.timing(spin, {
-          toValue:  1,
-          duration: 7000,
-          easing:   Easing.linear,
-          useNativeDriver: true,
-        }),
-      ).start();
-    });
+    Animated.loop(
+      Animated.timing(spin, {
+        toValue:         1,
+        duration:        7000,
+        easing:          Easing.linear,
+        useNativeDriver: true,
+      }),
+    ).start();
+  };
+
+  useEffect(() => {
+    if (animateSpawn) {
+      Animated.parallel([
+        Animated.spring(spawnScale, { toValue: 1, friction: 4, tension: 90, useNativeDriver: true }),
+        Animated.timing(spawnOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+      ]).start(() => {
+        // RT clock starts here — planet just became fully visible
+        readyTs.current = Date.now();
+        startIdleAnimations();
+      });
+    } else {
+      // No animation — planet appears at frame 0, RT clock already set at mount
+      startIdleAnimations();
+    }
 
     const timer = setTimeout(() => {
       if (!destroyed.current) despawn();
@@ -97,15 +114,22 @@ export default function PlanetObject({
     ]).start(() => onExit(id));
   };
 
-  const handleTap = () => {
+  const handleTap = (event: GestureResponderEvent) => {
     if (destroyed.current) return;
     destroyed.current = true;
     bob.stopAnimation();
     spin.stopAnimation();
-    Animated.parallel([
-      Animated.timing(destroyScale, { toValue: 1.7, duration: 220, useNativeDriver: true }),
-      Animated.timing(spawnOpacity, { toValue: 0,   duration: 220, useNativeDriver: true }),
-    ]).start(() => onDestroy(id));
+    const tapX       = event.nativeEvent.pageX;
+    const tapY       = event.nativeEvent.pageY;
+    const reactionMs = Math.max(0, Date.now() - readyTs.current);
+    if (animateDestroy) {
+      Animated.parallel([
+        Animated.timing(destroyScale, { toValue: 1.7, duration: 220, useNativeDriver: true }),
+        Animated.timing(spawnOpacity, { toValue: 0,   duration: 220, useNativeDriver: true }),
+      ]).start(() => onDestroy(id, tapX, tapY, reactionMs));
+    } else {
+      onDestroy(id, tapX, tapY, reactionMs);
+    }
   };
 
   return (
@@ -113,11 +137,11 @@ export default function PlanetObject({
       <Animated.View
         style={{
           position: 'absolute',
-          left:   x - size / 2,
-          top:    y - size / 2,
-          width:  size,
-          height: size,
-          opacity: spawnOpacity,
+          left:     x - size / 2,
+          top:      y - size / 2,
+          width:    size,
+          height:   size,
+          opacity:  spawnOpacity,
           transform: [
             { translateY: bob },
             { scale: spawnScale },
