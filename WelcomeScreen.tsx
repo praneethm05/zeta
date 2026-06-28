@@ -9,16 +9,18 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   Image,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, Syncopate_700Bold } from '@expo-google-fonts/syncopate';
 import { SpaceGrotesk_400Regular, SpaceGrotesk_600SemiBold } from '@expo-google-fonts/space-grotesk';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  getSettings, saveSettings, getStorageSizeBytes, AppSettings,
+  getSettings, saveSettings, getStorageSizeBytes, clearSessions, AppSettings,
 } from './utils/dataLogger';
 
 const { width, height } = Dimensions.get('window');
@@ -70,9 +72,13 @@ export default function WelcomeScreen({ onBegin }: Props) {
   const twinkle    = useRef(new Animated.Value(1)).current;
 
   // Settings panel
-  const [settingsVisible, setSettingsVisible] = useState(false);
-  const [settings,        setSettings]        = useState<AppSettings>({ animateSpawn: true, animateDestroy: true });
-  const [dataSize,        setDataSize]        = useState(0);
+  const [settingsVisible,  setSettingsVisible]  = useState(false);
+  const [settings,         setSettings]         = useState<AppSettings>({ animateSpawn: true, animateDestroy: true });
+  const [dataSize,         setDataSize]         = useState(0);
+  const [deleteVisible,    setDeleteVisible]    = useState(false);
+  const [confirmText,      setConfirmText]      = useState('');
+
+  const CONFIRM_PHRASE = 'I confirm this is not a mistake';
 
   useEffect(() => {
     getSettings().then(setSettings);
@@ -163,82 +169,143 @@ export default function WelcomeScreen({ onBegin }: Props) {
 
       <Image source={require('./assets/LandingScreen/bottom_rocks.png')} style={s.rocks} resizeMode="cover" />
 
-      {/* ── Settings Modal (researcher only) ── */}
-      <Modal visible={settingsVisible} transparent animationType="slide" onRequestClose={() => setSettingsVisible(false)}>
+      {/* ── Single modal: settings OR delete confirm ── */}
+      <Modal
+        visible={settingsVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setDeleteVisible(false); setSettingsVisible(false); }}
+      >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.50)', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: '#0D0D1A', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 20, paddingHorizontal: 28, paddingBottom: 48 }}>
 
-            {/* Handle */}
             <View style={{ width: 40, height: 4, backgroundColor: '#2A2A50', borderRadius: 2, alignSelf: 'center', marginBottom: 24 }} />
 
-            <Text style={{ fontFamily: 'Syncopate_700Bold', fontSize: 14, color: '#E8E8F0', letterSpacing: 5, marginBottom: 6 }}>
-              MISSION CONTROL
-            </Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A', marginBottom: 28 }}>
-              Researcher settings
-            </Text>
-
-            {/* Spawn animation toggle */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#13132A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 10 }}>
-              <View style={{ flex: 1, marginRight: 16 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#E8E8F0', marginBottom: 3 }}>
-                  Spawn Animation
+            {!deleteVisible ? (
+              <>
+                <Text style={{ fontFamily: 'Syncopate_700Bold', fontSize: 14, color: '#E8E8F0', letterSpacing: 5, marginBottom: 6 }}>
+                  MISSION CONTROL
                 </Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A' }}>
-                  {settings.animateSpawn
-                    ? 'Planets fade in (~220ms RT bias on first tap)'
-                    : 'Planets appear instantly — RT from frame 0'}
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A', marginBottom: 28 }}>
+                  Researcher settings
                 </Text>
-              </View>
-              <Switch
-                value={settings.animateSpawn}
-                onValueChange={async (v) => { const u = { ...settings, animateSpawn: v }; setSettings(u); await saveSettings(u); }}
-                trackColor={{ false: '#252545', true: '#4FD1FF' }}
-                thumbColor={settings.animateSpawn ? '#FFFFFF' : '#7A7A9A'}
-              />
-            </View>
 
-            {/* Destroy animation toggle */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#13132A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 14 }}>
-              <View style={{ flex: 1, marginRight: 16 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#E8E8F0', marginBottom: 3 }}>
-                  Destroy Animation
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#13132A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 10 }}>
+                  <View style={{ flex: 1, marginRight: 16 }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#E8E8F0', marginBottom: 3 }}>Spawn Animation</Text>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A' }}>
+                      {settings.animateSpawn ? 'Planets fade in (~220ms RT bias)' : 'Planets appear instantly — RT from frame 0'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={settings.animateSpawn}
+                    onValueChange={async (v) => { const u = { ...settings, animateSpawn: v }; setSettings(u); await saveSettings(u); }}
+                    trackColor={{ false: '#252545', true: '#4FD1FF' }}
+                    thumbColor={settings.animateSpawn ? '#FFFFFF' : '#7A7A9A'}
+                  />
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#13132A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 14 }}>
+                  <View style={{ flex: 1, marginRight: 16 }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#E8E8F0', marginBottom: 3 }}>Destroy Animation</Text>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A' }}>
+                      {settings.animateDestroy ? 'Burst on tap (~220ms delay)' : 'Planet vanishes instantly on tap'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={settings.animateDestroy}
+                    onValueChange={async (v) => { const u = { ...settings, animateDestroy: v }; setSettings(u); await saveSettings(u); }}
+                    trackColor={{ false: '#252545', true: '#4FD1FF' }}
+                    thumbColor={settings.animateDestroy ? '#FFFFFF' : '#7A7A9A'}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  onLongPress={() => { setConfirmText(''); setDeleteVisible(true); }}
+                  delayLongPress={600}
+                  activeOpacity={0.7}
+                  style={{ backgroundColor: '#13132A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 28 }}
+                >
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#E8E8F0', marginBottom: 3 }}>Stored Data</Text>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 22, color: '#4FD1FF', marginTop: 4 }}>{formatBytes(dataSize)}</Text>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A', marginTop: 4 }}>
+                    All sessions on-device · long press to delete
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setSettingsVisible(false)}
+                  style={{ backgroundColor: '#13132A', borderRadius: 12, paddingVertical: 15, alignItems: 'center' }}
+                >
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E8E8F0', fontSize: 14, letterSpacing: 2 }}>Close</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontFamily: 'Syncopate_700Bold', fontSize: 13, color: '#FF4444', letterSpacing: 4, marginBottom: 10 }}>
+                  DANGER ZONE
                 </Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A' }}>
-                  {settings.animateDestroy
-                    ? 'Burst on tap (~220ms before next spawn eligible)'
-                    : 'Planet vanishes instantly on tap'}
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#E8E8F0', marginBottom: 20, lineHeight: 20 }}>
+                  Permanently erases all session data from every participant. Type the phrase below to confirm:
                 </Text>
-              </View>
-              <Switch
-                value={settings.animateDestroy}
-                onValueChange={async (v) => { const u = { ...settings, animateDestroy: v }; setSettings(u); await saveSettings(u); }}
-                trackColor={{ false: '#252545', true: '#4FD1FF' }}
-                thumbColor={settings.animateDestroy ? '#FFFFFF' : '#7A7A9A'}
-              />
-            </View>
 
-            {/* Data size */}
-            <View style={{ backgroundColor: '#13132A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 28 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#E8E8F0', marginBottom: 3 }}>
-                Stored Data
-              </Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 22, color: '#4FD1FF', marginTop: 4 }}>
-                {formatBytes(dataSize)}
-              </Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#7A7A9A', marginTop: 4 }}>
-                All sessions stored on-device (AsyncStorage)
-              </Text>
-            </View>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#FF4444', marginBottom: 10, letterSpacing: 0.5 }}>
+                  {CONFIRM_PHRASE}
+                </Text>
 
-            <TouchableOpacity
-              onPress={() => setSettingsVisible(false)}
-              style={{ backgroundColor: '#13132A', borderRadius: 12, paddingVertical: 15, alignItems: 'center' }}
-            >
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E8E8F0', fontSize: 14, letterSpacing: 2 }}>
-                Close
-              </Text>
-            </TouchableOpacity>
+                <TextInput
+                  value={confirmText}
+                  onChangeText={setConfirmText}
+                  placeholder="Type confirmation phrase"
+                  placeholderTextColor="#3A3A5A"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    backgroundColor: '#13132A',
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    color: '#E8E8F0',
+                    fontFamily: 'SpaceGrotesk_400Regular',
+                    fontSize: 13,
+                    borderWidth: 1,
+                    borderColor: confirmText === CONFIRM_PHRASE ? '#FF4444' : '#252545',
+                    marginBottom: 20,
+                  }}
+                />
+
+                <TouchableOpacity
+                  disabled={confirmText !== CONFIRM_PHRASE}
+                  onPress={async () => {
+                    await clearSessions();
+                    setDataSize(0);
+                    setDeleteVisible(false);
+                    setConfirmText('');
+                    Alert.alert('Deleted', 'All session data has been erased.');
+                  }}
+                  style={{
+                    backgroundColor: confirmText === CONFIRM_PHRASE ? '#FF4444' : '#1A0A0A',
+                    borderRadius: 10,
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: '#FF4444',
+                  }}
+                >
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: confirmText === CONFIRM_PHRASE ? '#FFFFFF' : '#FF4444', fontSize: 13, letterSpacing: 1 }}>
+                    Delete All Data
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => { setDeleteVisible(false); setConfirmText(''); }}
+                  style={{ paddingVertical: 12, alignItems: 'center' }}
+                >
+                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#7A7A9A', fontSize: 13 }}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       </Modal>
